@@ -31,6 +31,11 @@ public class ExpenseAndIncomeTrackerApp {
     private JButton removeTransactionButton;
     private JTable transactionTable;
     private DefaultTableModel tableModel;
+    private final GameEngine game = new GameEngine();
+    private JProgressBar xpBar;
+    private JLabel levelLabel, goldLabel, streakLabel, healthLabel;
+    // Track last known level to detect level-ups
+    private int lastLevel = 1;
 
     // Variable to store the total amount
     private double totalAmount = 0.0;
@@ -41,6 +46,50 @@ public class ExpenseAndIncomeTrackerApp {
     // variables for form dragging
     private boolean isDragging = false;
     private Point mouseOffset;
+
+    private void flashLevelUp() {
+        java.util.List<JPanel> panels = new java.util.ArrayList<>();
+        for (int i = 0; i < 3 && i < dashboardPanel.getComponentCount(); i++) {
+            if (dashboardPanel.getComponent(i) instanceof JPanel) {
+                panels.add((JPanel) dashboardPanel.getComponent(i));
+            }
+        }
+
+        // Turn flash ON
+        for (JPanel p : panels) {
+            p.putClientProperty("flash", Boolean.TRUE);
+            p.putClientProperty("flashColor", new Color(255, 215, 0)); // gold
+            p.repaint();
+        }
+
+        // Turn flash OFF after 1s
+        new javax.swing.Timer(1000, e -> {
+            for (JPanel p : panels) {
+                p.putClientProperty("flash", Boolean.FALSE);
+                p.repaint();
+            }
+            ((javax.swing.Timer) e.getSource()).stop();
+        }).start();
+    }
+
+
+    private void refreshGameUI() {
+        int xp = game.getXp();
+        int level = game.getLevel();
+        xpBar.setValue(xp % 100);
+        xpBar.setString((xp % 100) + "/100 XP");
+        levelLabel.setText("Lv " + level);
+        goldLabel.setText("Gold: " + game.getGold());
+        streakLabel.setText("Streak: " + game.getDailyStreak() + "🔥");
+        healthLabel.setText("Health: " + game.getMonthHealth());
+
+        if (level > lastLevel) {
+            flashLevelUp();
+            lastLevel = level;
+        }
+    }
+
+
 
     // Constructor
     public ExpenseAndIncomeTrackerApp(){
@@ -59,6 +108,35 @@ public class ExpenseAndIncomeTrackerApp {
         titleBar.setBackground(new Color(52,73,94));
         titleBar.setPreferredSize(new Dimension(frame.getWidth(), 30));
         frame.add(titleBar, BorderLayout.NORTH);
+
+        xpBar = new JProgressBar(0, 100);
+        xpBar.setBounds(270, 5, 200, 20);
+        xpBar.setStringPainted(true);
+        titleBar.add(xpBar);
+
+        levelLabel = new JLabel("Lv 1");
+        levelLabel.setForeground(Color.WHITE);
+        levelLabel.setBounds(480, 5, 50, 20);
+        titleBar.add(levelLabel);
+
+        goldLabel = new JLabel("Gold: 0");
+        goldLabel.setForeground(Color.WHITE);
+        goldLabel.setBounds(540, 5, 90, 20);
+        titleBar.add(goldLabel);
+
+        streakLabel = new JLabel("Streak: 0🔥");
+        streakLabel.setForeground(Color.WHITE);
+        streakLabel.setBounds(630, 5, 120, 20);
+        titleBar.add(streakLabel);
+
+        healthLabel = new JLabel("Health: 100");
+        healthLabel.setForeground(Color.WHITE);
+        healthLabel.setBounds(700, 5, 120, 20);
+        titleBar.add(healthLabel);
+
+        lastLevel = game.getLevel();
+        refreshGameUI();
+
 
         // Create and set up the title label
         titleLabel = new JLabel("Expense And Income Tracker");
@@ -229,6 +307,8 @@ public class ExpenseAndIncomeTrackerApp {
         dashboardPanel.add(scrollPane);
 
         frame.setVisible(true);
+
+
     }
 
 
@@ -438,8 +518,8 @@ public class ExpenseAndIncomeTrackerApp {
             System.out.println("Error - Data not inserted.");
         }
 
-
-
+        game.onTransactionAdded(type, newAmount, java.time.LocalDate.now());
+        refreshGameUI();
 
     }
 
@@ -499,6 +579,19 @@ public class ExpenseAndIncomeTrackerApp {
                 Graphics2D g2d = (Graphics2D) g;
                 //make the drawing smooth
                 g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+                // --- FLASH OVERLAY (tint the whole card if active) ---
+                boolean doFlash = Boolean.TRUE.equals(getClientProperty("flash"));
+                if (doFlash) {
+                    Color flashColor = (Color) getClientProperty("flashColor");
+                    if (flashColor == null) flashColor = new Color(255, 215, 0); // gold
+                    // semi-transparent tint so your text stays readable
+                    g2d.setComposite(AlphaComposite.SrcOver.derive(0.35f));
+                    g2d.setColor(flashColor);
+                    g2d.fillRoundRect(0, 0, getWidth(), getHeight(), 20, 20);
+                    g2d.setComposite(AlphaComposite.SrcOver); // reset alpha
+                }
+
                 // Check if the title is "Total" to determine the content to display
                 if(title.equals("Total")){
                     // If the title is "Total," draw the data panel with the total amount
