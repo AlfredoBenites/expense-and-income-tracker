@@ -12,7 +12,7 @@ public class DatabaseConnection {
     static {
         try (InputStream in = DatabaseConnection.class
                 .getClassLoader()
-                .getResourceAsStream("config.properties")) {
+                .getResourceAsStream("config.sample.properties")) {
             if (in != null) {
                 props.load(in);
             } else {

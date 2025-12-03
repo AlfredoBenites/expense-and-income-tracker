@@ -588,6 +588,7 @@ public class ExpenseAndIncomeTrackerApp {
                     // semi-transparent tint so your text stays readable
                     g2d.setComposite(AlphaComposite.SrcOver.derive(0.35f));
                     g2d.setColor(flashColor);
+                    //wsg G
                     g2d.fillRoundRect(0, 0, getWidth(), getHeight(), 20, 20);
                     g2d.setComposite(AlphaComposite.SrcOver); // reset alpha
                 }
