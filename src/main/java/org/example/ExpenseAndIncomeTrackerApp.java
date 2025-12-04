@@ -698,6 +698,7 @@ class GradientHeaderRenderer extends JLabel implements TableCellRenderer {
 class CustomScrollBarUI extends BasicScrollBarUI {
     // Colors for the thumb and track of the scroll bar
     private Color thumbColor = new Color(189,195,199);
+    //please work
     private Color trackColor = new Color(236,240,241);
 
     // Override method to configure the scroll bar colors
