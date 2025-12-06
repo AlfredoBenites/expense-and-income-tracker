@@ -31,11 +31,9 @@ public class ExpenseAndIncomeTrackerApp {
     private JButton removeTransactionButton;
     private JTable transactionTable;
     private DefaultTableModel tableModel;
+    private JScrollPane transactionScrollPane;
     private final GameEngine game = new GameEngine();
-    private JProgressBar xpBar;
-    private JLabel levelLabel, goldLabel, streakLabel, healthLabel;
-    // Track last known level to detect level-ups
-    private int lastLevel = 1;
+    private JLabel scoreLabel;  // Single score display (replaces XP/level/gold/health)
 
     // Variable to store the total amount
     private double totalAmount = 0.0;
@@ -47,46 +45,10 @@ public class ExpenseAndIncomeTrackerApp {
     private boolean isDragging = false;
     private Point mouseOffset;
 
-    private void flashLevelUp() {
-        java.util.List<JPanel> panels = new java.util.ArrayList<>();
-        for (int i = 0; i < 3 && i < dashboardPanel.getComponentCount(); i++) {
-            if (dashboardPanel.getComponent(i) instanceof JPanel) {
-                panels.add((JPanel) dashboardPanel.getComponent(i));
-            }
-        }
-
-        // Turn flash ON
-        for (JPanel p : panels) {
-            p.putClientProperty("flash", Boolean.TRUE);
-            p.putClientProperty("flashColor", new Color(255, 215, 0)); // gold
-            p.repaint();
-        }
-
-        // Turn flash OFF after 1s
-        new javax.swing.Timer(1000, e -> {
-            for (JPanel p : panels) {
-                p.putClientProperty("flash", Boolean.FALSE);
-                p.repaint();
-            }
-            ((javax.swing.Timer) e.getSource()).stop();
-        }).start();
-    }
-
-
     private void refreshGameUI() {
-        int xp = game.getXp();
-        int level = game.getLevel();
-        xpBar.setValue(xp % 100);
-        xpBar.setString((xp % 100) + "/100 XP");
-        levelLabel.setText("Lv " + level);
-        goldLabel.setText("Gold: " + game.getGold());
-        streakLabel.setText("Streak: " + game.getDailyStreak() + "🔥");
-        healthLabel.setText("Health: " + game.getMonthHealth());
-
-        if (level > lastLevel) {
-            flashLevelUp();
-            lastLevel = level;
-        }
+        int score = game.getScore();
+        int streak = game.getCurrentStreak();
+        scoreLabel.setText("Score: " + score + "  Streak: " + streak);
     }
 
 
@@ -109,32 +71,13 @@ public class ExpenseAndIncomeTrackerApp {
         titleBar.setPreferredSize(new Dimension(frame.getWidth(), 30));
         frame.add(titleBar, BorderLayout.NORTH);
 
-        xpBar = new JProgressBar(0, 100);
-        xpBar.setBounds(270, 5, 200, 20);
-        xpBar.setStringPainted(true);
-        titleBar.add(xpBar);
+        // Score label - prominently displayed (includes streak)
+        scoreLabel = new JLabel("Score: 0  Streak: 0");
+        scoreLabel.setForeground(Color.WHITE);
+        scoreLabel.setFont(new Font("Arial", Font.BOLD, 18));
+        scoreLabel.setBounds(270, 2, 300, 26);
+        titleBar.add(scoreLabel);
 
-        levelLabel = new JLabel("Lv 1");
-        levelLabel.setForeground(Color.WHITE);
-        levelLabel.setBounds(480, 5, 50, 20);
-        titleBar.add(levelLabel);
-
-        goldLabel = new JLabel("Gold: 0");
-        goldLabel.setForeground(Color.WHITE);
-        goldLabel.setBounds(540, 5, 90, 20);
-        titleBar.add(goldLabel);
-
-        streakLabel = new JLabel("Streak: 0🔥");
-        streakLabel.setForeground(Color.WHITE);
-        streakLabel.setBounds(630, 5, 120, 20);
-        titleBar.add(streakLabel);
-
-        healthLabel = new JLabel("Health: 100");
-        healthLabel.setForeground(Color.WHITE);
-        healthLabel.setBounds(700, 5, 120, 20);
-        titleBar.add(healthLabel);
-
-        lastLevel = game.getLevel();
         refreshGameUI();
 
 
@@ -246,11 +189,15 @@ public class ExpenseAndIncomeTrackerApp {
         dashboardPanel.setBackground(new Color(236,240,241));
         frame.add(dashboardPanel,BorderLayout.CENTER);
 
-        // Calculate total amount and populate data panel values
-        totalAmount = TransactionValuesCalculation.getTotalValue(TransactionDAO.getAllTransaction());
-        dataPanelValues.add(String.format("-$%,.2f", TransactionValuesCalculation.getTotalExpenses(TransactionDAO.getAllTransaction())));
-        dataPanelValues.add(String.format("$%,.2f", TransactionValuesCalculation.getTotalIncomes(TransactionDAO.getAllTransaction())));
-        dataPanelValues.add("$"+totalAmount);
+        // Clear all transactions from database on startup - start fresh each day
+        TransactionDAO.clearAllTransactions();
+        TransactionDAO.resetAutoIncrement(); // Reset ID to start from 1
+        
+        // Initialize with zero transactions - fresh start
+        totalAmount = 0.0;
+        dataPanelValues.add("-$0.00");
+        dataPanelValues.add("$0.00");
+        dataPanelValues.add("$0.00");
 
 
         // Add data panels for Expense, Income, and Total
@@ -302,9 +249,12 @@ public class ExpenseAndIncomeTrackerApp {
         transactionTable = new JTable(tableModel);
         configureTransactionTable();
 
-        JScrollPane scrollPane = new JScrollPane(transactionTable);
-        configureScrollPane(scrollPane);
-        dashboardPanel.add(scrollPane);
+        transactionScrollPane = new JScrollPane(transactionTable);
+        configureScrollPane(transactionScrollPane);
+        dashboardPanel.add(transactionScrollPane);
+        
+        // Scroll to bottom to show latest transactions
+        scrollToBottom();
 
         frame.setVisible(true);
 
@@ -380,10 +330,9 @@ public class ExpenseAndIncomeTrackerApp {
     // Remove a transaction from the database
     private void removeTransactionFromDatabase(int transactionId){
 
-        try {
-            Connection connection = DatabaseConnection.getConnection();
-            PreparedStatement ps = connection.prepareStatement("DELETE FROM `transaction_table` WHERE `id` = ?");
-
+        try (Connection connection = DatabaseConnection.getConnection();
+             PreparedStatement ps = connection.prepareStatement("DELETE FROM `transaction_table` WHERE `id` = ?")) {
+            
             ps.setInt(1, transactionId);
             ps.executeLargeUpdate();
             System.out.println("Transaction Removed");
@@ -446,8 +395,6 @@ public class ExpenseAndIncomeTrackerApp {
         dialogPanel.add(new JLabel()); // Empty label for spacing
         dialogPanel.add(addButton);
 
-        DatabaseConnection.getConnection();
-
         dialog.add(dialogPanel);
         dialog.setVisible(true);
 
@@ -500,19 +447,21 @@ public class ExpenseAndIncomeTrackerApp {
         dataPanel.repaint();
 
 
-        try {
-            Connection connection = DatabaseConnection.getConnection();
+        try (Connection connection = DatabaseConnection.getConnection()) {
             String insertQuery = "INSERT INTO `transaction_table`(`transaction_type`, `description`, `amount`) VALUES (?,?,?)";
-            PreparedStatement ps = connection.prepareStatement(insertQuery);
-
-            ps.setString(1, type);
-            ps.setString(2, description);
-            ps.setDouble(3, newAmount);
-            ps.executeUpdate();
-            System.out.println("Data inserted successfully.");
+            try (PreparedStatement ps = connection.prepareStatement(insertQuery)) {
+                ps.setString(1, type);
+                ps.setString(2, description);
+                ps.setDouble(3, newAmount);
+                ps.executeUpdate();
+                System.out.println("Data inserted successfully.");
+            }
 
             tableModel.setRowCount(0);
             populateTableTransactions();
+            
+            // Scroll to bottom to show the newly added transaction
+            scrollToBottom();
 
         } catch (SQLException ex) {
             System.out.println("Error - Data not inserted.");
@@ -534,6 +483,24 @@ public class ExpenseAndIncomeTrackerApp {
 
         }
 
+    }
+    
+    /**
+     * Scrolls the transaction table to the bottom to show the latest transaction
+     */
+    private void scrollToBottom() {
+        if (transactionScrollPane != null && transactionTable != null) {
+            // Use SwingUtilities.invokeLater to ensure the table is fully rendered before scrolling
+            SwingUtilities.invokeLater(() -> {
+                int rowCount = transactionTable.getRowCount();
+                if (rowCount > 0) {
+                    // Scroll to the last row
+                    transactionTable.scrollRectToVisible(
+                        transactionTable.getCellRect(rowCount - 1, 0, true)
+                    );
+                }
+            });
+        }
     }
 
 
@@ -640,6 +607,113 @@ public class ExpenseAndIncomeTrackerApp {
 
     }
 
+    /**
+     * Returns the JFrame instance so it can be accessed from other classes
+     * (e.g., to position it next to the game window)
+     */
+    public JFrame getFrame() {
+        return frame;
+    }
+    
+    /**
+     * Refreshes the transaction table and data panels with latest data from database
+     */
+    public void refreshTransactions() {
+        // Clear and repopulate table
+        tableModel.setRowCount(0);
+        populateTableTransactions();
+        
+        // Scroll to bottom to show latest transactions
+        scrollToBottom();
+        
+        // Recalculate totals
+        java.util.List<Transaction> allTransactions = TransactionDAO.getAllTransaction();
+        totalAmount = TransactionValuesCalculation.getTotalValue(allTransactions);
+        dataPanelValues.clear();
+        dataPanelValues.add(String.format("-$%,.2f", TransactionValuesCalculation.getTotalExpenses(allTransactions)));
+        dataPanelValues.add(String.format("$%,.2f", TransactionValuesCalculation.getTotalIncomes(allTransactions)));
+        dataPanelValues.add("$" + String.format("%.2f", totalAmount));
+        
+        // Repaint all data panels
+        for (int i = 0; i < 3 && i < dashboardPanel.getComponentCount(); i++) {
+            if (dashboardPanel.getComponent(i) instanceof JPanel) {
+                dashboardPanel.getComponent(i).repaint();
+            }
+        }
+        
+        // Refresh game UI (XP, level, etc.)
+        refreshGameUI();
+    }
+    
+    /**
+     * Adds score points directly to the game engine (for gameplay-based rewards like speed bonuses)
+     * Also increments the streak for correct orders
+     * @param basePoints The base number of points (before streak multiplier)
+     */
+    public void addScoreToGame(int basePoints) {
+        game.incrementStreak();  // Increment streak for correct order
+        game.addScore(basePoints);  // Add score with streak multiplier applied
+        refreshGameUI();
+    }
+    
+    /**
+     * Resets the streak (called when an order is wrong or failed)
+     */
+    public void resetStreak() {
+        game.resetStreak();
+        refreshGameUI();
+    }
+    
+    /**
+     * Resets all transaction data for a new day
+     * Clears database, resets ID counter, clears table, and resets game state
+     */
+    public void resetForNewDay() {
+        // Clear all transactions from database
+        TransactionDAO.clearAllTransactions();
+        TransactionDAO.resetAutoIncrement(); // Reset ID to start from 1
+        
+        // Clear the table
+        tableModel.setRowCount(0);
+        
+        // Reset totals
+        totalAmount = 0.0;
+        dataPanelValues.clear();
+        dataPanelValues.add("-$0.00");
+        dataPanelValues.add("$0.00");
+        dataPanelValues.add("$0.00");
+        
+        // Reset game state (but keep score and currentStreak - they persist across days)
+        game.recalculateFromTransactions(new java.util.ArrayList<>());
+        
+        // Repaint all data panels
+        for (int i = 0; i < 3 && i < dashboardPanel.getComponentCount(); i++) {
+            if (dashboardPanel.getComponent(i) instanceof JPanel) {
+                dashboardPanel.getComponent(i).repaint();
+            }
+        }
+        
+        // Refresh game UI
+        refreshGameUI();
+    }
+    
+    /**
+     * Resets both score and streak to 0 (called on full game restart)
+     */
+    public void resetScoreAndStreak() {
+        game.resetScore();
+        game.resetStreak();
+        refreshGameUI();
+    }
+    
+    /**
+     * Gets the current score from the game engine
+     * @return The current total score
+     */
+    public int getScore() {
+        return game.getScore();
+    }
+
     // main method
     public static void main(String[] args) {
         new ExpenseAndIncomeTrackerApp();
@@ -698,6 +772,7 @@ class GradientHeaderRenderer extends JLabel implements TableCellRenderer {
 class CustomScrollBarUI extends BasicScrollBarUI {
     // Colors for the thumb and track of the scroll bar
     private Color thumbColor = new Color(189,195,199);
+    //please work
     private Color trackColor = new Color(236,240,241);
 
     // Override method to configure the scroll bar colors
